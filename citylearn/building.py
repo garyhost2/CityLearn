@@ -3276,9 +3276,19 @@ class LSTMDynamicsBuilding(DynamicsBuilding):
         indoor_dry_bulb_temperature = indoor_dry_bulb_temperature_norm*(high_limit - low_limit) + low_limit
         
         # update temperature
-        # this function is called after advancing to next timestep 
-        # so the cooling demand update and this temperature update are set at the same time step
-        self.energy_simulation.indoor_dry_bulb_temperature[self.time_step] = indoor_dry_bulb_temperature.item()
+        # Up to v2.3.1 this function ran *after* the environment advanced the time step, so
+        # `self.time_step` was already the step whose observation would be returned, and writing
+        # the prediction there was correct. Since v2.4.0 `apply_actions` runs *before*
+        # `next_time_step`, so `self.time_step` is still the step the action was applied to while
+        # the observation is built one step later. Writing to `self.time_step` therefore leaves
+        # the observed `indoor_dry_bulb_temperature` holding the dataset's uncontrolled value and
+        # makes the simulated dynamics invisible to the agent. Write to the step the observation
+        # will be built for instead, clamped at the end of the episode.
+        write_time_step = min(
+            self.time_step + 1,
+            self.energy_simulation.indoor_dry_bulb_temperature.shape[0] - 1,
+        )
+        self.energy_simulation.indoor_dry_bulb_temperature[write_time_step] = indoor_dry_bulb_temperature.item()
 
     def get_dynamics_input(self) -> np.ndarray:
         model_input = []
